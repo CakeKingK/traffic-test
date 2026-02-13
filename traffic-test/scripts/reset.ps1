@@ -1,0 +1,6 @@
+$ErrorActionPreference = "Stop"
+Set-Location (Split-Path $PSScriptRoot -Parent)
+
+docker compose -f .\compose\docker-compose.yml --env-file .\.env down --remove-orphans --volumes
+docker network prune -f
+docker ps

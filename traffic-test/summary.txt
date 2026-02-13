@@ -1,0 +1,128 @@
+# traffic-test (Windows 폴더 + Docker Compose 기반 대량 트래픽 실험 환경)
+
+## 1. 목적
+- Windows 로컬 폴더(`E:\docker\traffic-test`)를 베이스로 유지
+- 필요한 인스턴스(Nginx / Node.js / Redis / (추가 예정: Java) / k6)는 Docker로 띄움
+- 로드밸런싱, 캐시, 지연(병목) 재현, 대량 트래픽 실험을 빠르게 반복할 수 있도록 구성
+
+---
+
+## 2. 현재 폴더 구조
+
+```text
+E:\docker\traffic-test
+│  .env
+│
+├─app-java            (추가 예정: Java 서버)
+├─app-nodejs
+│      Dockerfile
+│      package.json
+│      server.js
+│
+├─compose
+│      docker-compose.yml
+│
+├─nginx
+│      nginx.conf
+│
+└─scripts
+        up.ps1
+        down.ps1
+        reset.ps1
+3. 구성요소(현재)
+Nginx (앞단, 로컬 포트 18080 노출)
+
+Node.js 앱 2개 인스턴스(app1/app2)
+
+Redis (로컬 포트 16379 노출)
+
+노출 포트
+Nginx: http://localhost:18080
+
+Redis: localhost:16379
+
+4. 실행 / 종료 / 초기화
+실행(빌드 포함)
+cd E:\docker\traffic-test
+.\scripts\up.ps1
+종료
+.\scripts\down.ps1
+초기화(볼륨 포함 정리, 고아 컨테이너 제거)
+.\scripts\reset.ps1
+상태 확인
+docker compose -f .\compose\docker-compose.yml --env-file .\.env ps -a
+docker ps
+5. API 테스트 (Nginx 통해 접근)
+PowerShell에서는 curl이 Invoke-WebRequest 별칭이라 결과가 길 수 있음
+간단히 보려면 curl.exe 사용 권장
+
+Health (로드밸런싱 확인용)
+curl.exe http://localhost:18080/health
+여러 번 호출해서 instance가 app1/app2로 섞이면 로드밸런싱 정상
+
+for ($i=0; $i -lt 10; $i++) { curl.exe -s http://localhost:18080/health; Write-Host "" }
+Cache (Redis 캐시 HIT/MISS 확인)
+curl.exe "http://localhost:18080/cached?key=hot"
+curl.exe "http://localhost:18080/cached?key=hot"
+첫 호출: MISS 가능
+
+두 번째부터: HIT가 나와야 정상
+
+TTL(현재 10초) 만료 후 다시 호출하면 MISS가 다시 발생
+
+Slow (지연/병목 재현)
+curl.exe http://localhost:18080/slow
+6. Node.js 앱 기능 요약 (app-nodejs/server.js)
+/health : 인스턴스(app1/app2) 확인
+
+/cached?key=... : Redis 캐시 테스트
+
+MISS 시 30ms 지연을 “DB 호출 비용”처럼 흉내낸 뒤 Redis에 저장
+
+TTL 10초(setEx(key, 10, value))
+
+/slow : 100ms 지연으로 병목 상황 재현
+
+7. Redis 직접 확인(선택)
+docker exec -it compose-redis-1 redis-cli GET hot
+docker exec -it compose-redis-1 redis-cli TTL hot
+TTL이 남은 초로 출력
+
+키 없으면 TTL은 -2
+
+8. Compose / Dockerfile 개념 정리
+Dockerfile: “컨테이너 1개”를 만드는 레시피(이미지 빌드 정의)
+
+docker-compose: “여러 컨테이너”를 한 세트로 띄우고 네트워크/포트/환경변수 등을 묶어서 관리
+
+현재는:
+
+Node.js 이미지는 app-nodejs/Dockerfile
+
+compose가 Nginx + app1/app2 + Redis를 동시에 실행
+
+9. Java 서버(app-java) 추가 계획
+Node와 Java를 섞어 쓰려면 보통 서비스별로 Dockerfile을 둔다.
+
+Node용 Dockerfile: 이미 존재
+
+Java(Spring Boot)용 Dockerfile: app-java에 추가 예정
+
+추가 목표 예시:
+
+java1/java2 인스턴스를 compose에 추가
+
+Nginx에서 경로 기반 라우팅
+
+/node/* -> node backend
+
+/java/* -> java backend
+
+10. 다음 단계 후보
+k6(부하 테스트 도구) 붙이기: smoke/spike/soak/stress 시나리오로 p95/RPS/에러율 측정
+
+Nginx Rate Limit 붙이기: 과부하에서 전체 다운 대신 일부를 빠르게 제한(429)
+
+모니터링 추가: Prometheus/Grafana로 CPU/메모리/Latency 시각화
+
+app-java 최소 Spring Boot 샘플 생성 및 compose/nginx에 통합

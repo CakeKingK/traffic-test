@@ -1,0 +1,9 @@
+{
+    "name": "traffic-test-app",
+    "version": "1.0.0",
+    "private": true,
+    "type": "command.js",
+    "dependencies": {
+        "redis": "^4.6.13"
+    }
+}

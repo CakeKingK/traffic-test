@@ -1,0 +1,10 @@
+# WSL
+DockerDesktopWSL/
+# **/DockerDesktopWSL/
+
+
+# react
+react/node_modules/
+react/dist/
+react/.vite/
+
